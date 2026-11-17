@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:pages": "tsc && vite build",
     "build:offline": "vite build --config vite.offline.config.ts",
     "open": "node scripts/serve-portable.mjs",
     "preview": "vite preview",

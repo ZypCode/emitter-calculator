@@ -24,6 +24,15 @@ npm install
 npm run dev
 ```
 
+## GitHub Pages
+
+推送到 `main` 后，由 [`.github/workflows/pages.yml`](.github/workflows/pages.yml) 自动构建并部署。
+
+- 构建：`npm run build:pages`（`base` 为 `/emitter-calculator/`）
+- 访问：`https://<GitHub 用户名或组织>.github.io/emitter-calculator/`
+
+首次使用需在仓库 **Settings → Pages → Build and deployment** 中选择 **GitHub Actions**。
+
 ## 数据文件
 
 - `currentLevel`：已通关的最高关卡。

@@ -138,7 +138,8 @@ function parseLevelRewards(raw: unknown): Record<string, RewardEntry[]> {
 }
 
 async function loadDefault() {
-  const urls = ['./data/default-state.json', '/data/default-state.json']
+  const base = import.meta.env.BASE_URL
+  const urls = [`${base}data/default-state.json`, './data/default-state.json', '/data/default-state.json']
   let loaded = false
   for (const url of urls) {
     try {
