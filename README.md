@@ -46,6 +46,16 @@ npm run dev
 
 与 [score-planner](https://github.com/ZypCode/score-planner) 共用 Cloudflare Worker。页面底部可登录后 **上传/拉取当前进度**；更新默认时在登录状态下会同步到云端 `emitter-calculator-default`。
 
+### API 无法访问时排查
+
+1. **先部署 Worker**（若从未部署）：在 score-planner 仓库执行  
+   `cd worker` → 配置 `wrangler.toml` 里的 KV → `wrangler deploy`  
+   终端会打印真实地址，形如 `https://zyp-platform-sync.<你的子域>.workers.dev`。
+2. 在页面「云同步」里把 **该地址** 粘贴到 API，点 **保存 API**（不要用未部署或别人的域名）。
+3. 浏览器直接打开 `https://你的worker地址/health`，应看到 `{"ok":true,...}`。
+4. 若浏览器能开、页面仍失败：换网络或检查是否屏蔽 `*.workers.dev`（部分网络需代理，或为 Worker 绑定 **自定义域名**）。
+5. index.html 里的 `DEFAULT_SYNC_API` 只是默认值；以你 **wrangler deploy 输出** 为准。
+
 ## 数据文件
 
 - `currentLevel`：已通关的最高关卡。

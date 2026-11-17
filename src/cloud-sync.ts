@@ -111,7 +111,7 @@ export function bindCloudSync(deps: {
     z.setApi(url)
     z.health()
       .then(() => deps.toast('API 可用', 'success'))
-      .catch(() => deps.toast('API 无法访问', 'error'))
+      .catch((e: Error) => deps.toast(e.message || 'API 无法访问', 'error'))
       .finally(updateCloudUi)
   })
 

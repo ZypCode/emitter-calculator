@@ -82,6 +82,12 @@ var ZypSync = (function () {
         if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
         return j;
       });
+    }).catch(function (e) {
+      var msg = (e && e.message) ? String(e.message) : '网络请求失败';
+      if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+        msg = '无法连接同步 API（请确认 Worker 已部署，且当前网络能访问 ' + base + '）';
+      }
+      throw new Error(msg);
     });
   }
 
