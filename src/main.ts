@@ -6,7 +6,17 @@ import {
   totalSlots,
   validateRewards,
 } from './core/merge'
+import { bindCloudSync, cloudPullDefaultTemplate, cloudPushDefaultTemplate, renderCloudSyncCard } from './cloud-sync'
+import {
+  clearUserDefaultInLocal,
+  fetchBundledDefaultJson,
+  hasUserDefaultInLocal,
+  readUserDefaultFromLocal,
+  writeDefaultToLocalApi,
+  writeUserDefaultToLocal,
+} from './default-store'
 import type { GameState, HistoryEntry, InventoryEntry, RewardEntry } from './core/types'
+import { parseGameState, serializeStatePayload } from './state-io'
 import defaultStateData from '../public/data/default-state.json'
 
 let state: GameState | null = null
@@ -79,130 +89,81 @@ function showToast(message: string, kind: 'info' | 'error' | 'success' = 'info')
   }, 4000)
 }
 
-function parseGameState(raw: unknown): GameState {
-  if (!raw || typeof raw !== 'object') throw new Error('根对象无效')
-  const o = raw as Record<string, unknown>
-  const currentLevel = o.currentLevel
-  if (typeof currentLevel !== 'number' || !Number.isInteger(currentLevel) || currentLevel < 0) {
-    throw new Error('currentLevel 须为非负整数')
-  }
-  const inv = parseInventory(o.inventory)
-  const levelRewards = parseLevelRewards(o.levelRewards)
-  const history = parseHistory(o.history)
-  const emitterTypes = Array.isArray(o.emitterTypes)
-    ? (o.emitterTypes as unknown[]).map((t) => String(t).trim()).filter(Boolean)
-    : undefined
-  const gameState: GameState = {
-    currentLevel,
-    inventory: mergeInventory(inv),
-    levelRewards,
-    history,
-    emitterTypes,
-  }
-  syncEmitterTypes(gameState)
-  return gameState
-}
-
-function parseInventory(raw: unknown): InventoryEntry[] {
-  if (!Array.isArray(raw)) throw new Error('inventory 须为数组')
-  return raw.map((item, i) => {
-    if (!item || typeof item !== 'object') throw new Error(`inventory[${i}] 无效`)
-    const x = item as Record<string, unknown>
-    const type = String(x.type ?? '').trim()
-    const level = Number(x.level)
-    const count = Number(x.count)
-    if (!type) throw new Error(`inventory[${i}].type 不能为空`)
-    if (!Number.isInteger(level) || level < 1) throw new Error(`inventory[${i}].level 须 ≥1`)
-    if (!Number.isInteger(count) || count < 1) throw new Error(`inventory[${i}].count 须 ≥1`)
-    return { type, level, count }
-  })
-}
-
-function parseLevelRewards(raw: unknown): Record<string, RewardEntry[]> {
-  if (raw === undefined || raw === null) return {}
-  if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error('levelRewards 须为对象')
-  const out: Record<string, RewardEntry[]> = {}
-  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
-    if (!Array.isArray(val)) throw new Error(`levelRewards.${key} 须为数组`)
-    out[key] = val.map((item, i) => {
-      if (!item || typeof item !== 'object') throw new Error(`levelRewards.${key}[${i}] 无效`)
-      const x = item as Record<string, unknown>
-      return {
-        type: String(x.type ?? '').trim(),
-        level: Number(x.level),
-        count: Number(x.count),
-      }
-    })
-  }
-  return out
+function defaultSourceLabel(): string {
+  if (hasUserDefaultInLocal()) return '本机覆盖的默认'
+  return '仓库 default-state.json'
 }
 
 async function loadDefault() {
-  const base = import.meta.env.BASE_URL
-  const urls = [`${base}data/default-state.json`, './data/default-state.json', '/data/default-state.json']
-  let loaded = false
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, { cache: 'no-store' })
-      if (res.ok) {
-        state = parseGameState(await res.json())
-        loaded = true
-        break
-      }
-    } catch {
-      /* 尝试下一个地址 */
-    }
+  const localUser = readUserDefaultFromLocal()
+  if (localUser) {
+    state = localUser
+    showToast('已加载默认 JSON（本机覆盖）', 'success')
+    render()
+    return
   }
-  if (!loaded) {
-    state = parseGameState(defaultStateData)
-    showToast('未读到外部 JSON，已用内嵌备份。请双击「打开计算器.bat」启动', 'info')
+  try {
+    const fromCloud = await cloudPullDefaultTemplate()
+    if (fromCloud) {
+      state = fromCloud
+      writeUserDefaultToLocal(fromCloud)
+      showToast('已加载默认 JSON（云端默认模板）', 'success')
+      render()
+      return
+    }
+  } catch {
+    /* 未登录或云端无数据 */
+  }
+  const fileJson = await fetchBundledDefaultJson()
+  if (fileJson) {
+    state = parseGameState(fileJson)
+    showToast('已加载默认 JSON（仓库文件）', 'success')
+    render()
+    return
+  }
+  state = parseGameState(defaultStateData)
+  showToast('已加载默认 JSON（内嵌备份）', 'info')
+  render()
+}
+
+async function updateUserDefault() {
+  if (!state) return
+  if (!window.confirm('将当前完整状态设为新的「默认 JSON」？之后「加载默认 JSON」会优先使用该配置。')) return
+  writeUserDefaultToLocal(state)
+  const parts: string[] = ['本机浏览器']
+  if (await writeDefaultToLocalApi(state)) {
+    parts.push('public/data/default-state.json')
+  }
+  try {
+    await cloudPushDefaultTemplate(state)
+    parts.push('云端默认模板')
+  } catch {
+    /* 未登录时忽略 */
+  }
+  showToast(`已更新默认 JSON：${parts.join('、')}`, 'success')
+}
+
+function resetToRepoDefault() {
+  if (!window.confirm('清除本机默认覆盖，并从仓库 default-state.json 重新加载？')) return
+  clearUserDefaultInLocal()
+  void loadDefaultFromRepoFileOnly()
+}
+
+async function loadDefaultFromRepoFileOnly() {
+  const fileJson = await fetchBundledDefaultJson()
+  if (fileJson) {
+    state = parseGameState(fileJson)
+    showToast('已恢复为仓库 default-state.json', 'success')
   } else {
-    showToast('已从 default-state.json 加载', 'success')
+    state = parseGameState(defaultStateData)
+    showToast('已恢复为内嵌默认', 'info')
   }
   render()
 }
 
-function parseHistory(raw: unknown): HistoryEntry[] {
-  if (!Array.isArray(raw)) return []
-  const out: HistoryEntry[] = []
-  for (let i = 0; i < raw.length; i++) {
-    const item = raw[i]
-    if (!item || typeof item !== 'object') continue
-    const h = item as Record<string, unknown>
-    const levelCleared = Number(h.levelCleared)
-    const slotsBefore = Number(h.slotsBefore)
-    const slotsAfter = Number(h.slotsAfter)
-    if (!Number.isInteger(levelCleared) || levelCleared < 1) continue
-    if (!Number.isInteger(slotsBefore) || slotsBefore < 0) continue
-    if (!Number.isInteger(slotsAfter) || slotsAfter < 0) continue
-    const rewards = Array.isArray(h.rewards) ? (h.rewards as RewardEntry[]) : []
-    out.push({
-      at: typeof h.at === 'string' ? h.at : new Date(0).toISOString(),
-      levelCleared,
-      rewards: rewards.map((r) => ({
-        type: String((r as RewardEntry).type ?? '').trim(),
-        level: Number((r as RewardEntry).level),
-        count: Number((r as RewardEntry).count),
-      })),
-      slotsBefore,
-      slotsAfter,
-    })
-  }
-  return out
-}
-
 function exportJson() {
   if (!state) return
-  const payload: GameState = {
-    ...state,
-    history: state.history.map(({ at, levelCleared, rewards, slotsBefore, slotsAfter }) => ({
-      at,
-      levelCleared,
-      rewards,
-      slotsBefore,
-      slotsAfter,
-    })),
-  }
+  const payload = serializeStatePayload(state)
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
@@ -331,11 +292,15 @@ function render() {
       <p class="sub">同种类同等级 2 合 1，自动连缀合成；每个发射器占 1 格。当前<strong>已通关</strong>第 ${state.currentLevel} 关。</p>
     </header>
     <div id="toast" hidden></div>
+    <p class="hint">默认配置来源：<strong>${defaultSourceLabel()}</strong> · 「更新默认 JSON」会把当前状态写成新的默认</p>
     <div class="toolbar">
       <button type="button" id="btn-reload">加载默认 JSON</button>
+      <button type="button" id="btn-update-default" class="primary">更新默认 JSON</button>
+      <button type="button" id="btn-reset-default">恢复仓库默认</button>
       <label class="file-btn">导入 JSON<input type="file" id="file-import" accept="application/json,.json" /></label>
       <button type="button" id="btn-export">导出 JSON</button>
     </div>
+    ${renderCloudSyncCard()}
     <div class="cards">
       <div class="card">
         <h2>占用格数</h2>
@@ -381,10 +346,20 @@ function render() {
   `
 
   bindEvents(preset)
+  bindCloudSync({
+    getState: () => state,
+    setState: (s) => {
+      state = s
+      render()
+    },
+    toast: showToast,
+  })
 }
 
 function bindEvents(preset: RewardEntry[] | null) {
   document.getElementById('btn-reload')?.addEventListener('click', () => void loadDefault())
+  document.getElementById('btn-update-default')?.addEventListener('click', () => void updateUserDefault())
+  document.getElementById('btn-reset-default')?.addEventListener('click', resetToRepoDefault)
   document.getElementById('btn-export')?.addEventListener('click', exportJson)
   document.getElementById('file-import')?.addEventListener('change', (ev) => {
     const file = (ev.target as HTMLInputElement).files?.[0]

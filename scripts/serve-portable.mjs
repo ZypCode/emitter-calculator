@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
-import { createReadStream, existsSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import http from 'node:http'
-import { extname, join, normalize } from 'node:path'
+import { dirname, extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
@@ -44,9 +44,31 @@ if (!entryHtml) {
   process.exit(1)
 }
 
-const server = http.createServer((req, res) => {
+function readRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    req.on('data', (c) => chunks.push(c))
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    req.on('error', reject)
+  })
+}
+
+const server = http.createServer(async (req, res) => {
   const raw = (req.url ?? '/').split('?')[0]
   let urlPath = raw === '/' ? `/${entryHtml}` : raw
+
+  if (urlPath === '/api/default-state' && (req.method === 'PUT' || req.method === 'POST')) {
+    try {
+      const body = await readRequestBody(req)
+      JSON.parse(body)
+      mkdirSync(dirname(defaultJson), { recursive: true })
+      writeFileSync(defaultJson, body, 'utf8')
+      send(res, 200, JSON.stringify({ ok: true }), 'application/json; charset=utf-8')
+    } catch (e) {
+      send(res, 400, e instanceof Error ? e.message : 'invalid json')
+    }
+    return
+  }
 
   if (urlPath === '/data/default-state.json' || urlPath.endsWith('/data/default-state.json')) {
     if (!existsSync(defaultJson)) {

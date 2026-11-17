@@ -33,6 +33,19 @@ npm run dev
 
 首次使用需在仓库 **Settings → Pages → Build and deployment** 中选择 **GitHub Actions**。
 
+## 默认 JSON 与「更新默认 JSON」
+
+| 环境 | 「加载默认 JSON」 | 「更新默认 JSON」 |
+|------|-------------------|-------------------|
+| `npm run dev` / `打开计算器.bat` | 优先本机覆盖 → 仓库 `public/data/default-state.json` | 可写回本机文件 + 浏览器覆盖 |
+| GitHub Pages | 本机覆盖 → 线上 `default-state.json` → 内嵌 | 浏览器覆盖；登录云同步后可写云端默认模板 |
+
+点击 **「更新默认 JSON」** 会把**当前完整状态**存为新的默认；**「恢复仓库默认」** 清除本机覆盖并重新读仓库文件。
+
+## 云同步（步骤 4）
+
+与 [score-planner](https://github.com/ZypCode/score-planner) 共用 Cloudflare Worker。页面底部可登录后 **上传/拉取当前进度**；更新默认时在登录状态下会同步到云端 `emitter-calculator-default`。
+
 ## 数据文件
 
 - `currentLevel`：已通关的最高关卡。

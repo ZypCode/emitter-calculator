@@ -160,6 +160,25 @@ select.type-select {
   min-width: 10rem;
 }
 
+.cloud-api-row {
+  display: block;
+  margin-top: 0.5rem;
+}
+
+.cloud-login-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.cloud-login-row input {
+  width: auto;
+  min-width: 8rem;
+  flex: 1;
+}
+
 .reward-form {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr auto;
